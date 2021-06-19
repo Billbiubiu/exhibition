@@ -4,6 +4,29 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import TWEEN from '@tweenjs/tween.js';
 
 const { PI } = Math;
+const IS_MOBILE = window.navigator.userAgent.toLowerCase().indexOf('mobile') > -1;
+
+/**
+ * 转动工具，总是以锐角进行转动
+ * @param {*} source 当前角度
+ * @param {*} target 目标角度
+ * @returns 
+ */
+const getRotation = (source, target) => {
+  let makedSource = source % (PI * 2);
+  makedSource = makedSource < 0 ? makedSource + (PI * 2) : makedSource;
+  let makedTarget = target % (PI * 2);
+  makedTarget = makedTarget < 0 ? makedTarget + (PI * 2) : makedTarget;
+  const diff = makedTarget - makedSource;
+  // 差值大于180度，需要反方向旋转
+  if (diff > PI) {
+    return source - (PI * 2 - diff);
+  } else if (diff < -PI) {
+    return source + (PI * 2 + diff);
+  } else {
+    return source + diff;
+  }
+}
 
 const Exhibition = () => {
   const containerRef = useRef();
@@ -88,37 +111,212 @@ const Exhibition = () => {
     setInstances({ orbitControls });
   }, [camera, renderer]);
   /**
-   * 添加自定义控制器
+   * 添加鼠标控制和手势控制
    */
   useEffect(() => {
     if (!camera || !renderer) return;
     const { domElement } = renderer;
-    const onPointerDown = downEvent => {
-      const { offsetWidth, offsetHeight } = domElement;
-      const { x, y } = camera.rotation;
-      const { offsetX: downX, offsetY: downY } = downEvent;
-      const onPointerMove = moveEvent => {
-        const { offsetX: moveX, offsetY: moveY } = moveEvent;
-        const dy = moveY - downY;
-        const rotationX = x + (dy / (offsetHeight / 2) * PI);
-        // camera.rotation.x = rotationX;
-        const dx = moveX - downX;
-        const rotationY = y + (dx / (offsetWidth / 2) * (2 * PI))
-        camera.rotation.y = rotationY;
-        console.info(rotationX, rotationY);
-      }
-      const onPointerUp = () => {
-        domElement.removeEventListener('pointermove', onPointerMove);
-        domElement.removeEventListener('pointerup', onPointerUp);
-      }
-      domElement.addEventListener('pointermove', onPointerMove);
-      domElement.addEventListener('pointerup', onPointerUp);
+    let callback = () => { };
+    if (IS_MOBILE) {
+      const onTouchStart = startEvent => {
+        const { touches: startTouches } = startEvent;
+        if (startTouches.length === 1) {
+          const { offsetWidth, offsetHeight } = domElement;
+          const { x, y } = camera.rotation;
+          const { clientX: startX, clientY: startY } = startTouches[0];
+          const onTouchMove = moveEvent => {
+            const { touches: moveTouches } = moveEvent;
+            if (moveTouches.length !== 1) return;
+            const { clientX: moveX, clientY: moveY } = moveTouches[0];
+            const dy = moveY - startY;
+            const rotationX = x + (dy / (offsetHeight / 2) * PI);
+            camera.rotation.x = rotationX;
+            camera.rotation.x = x; // 不允许沿x轴转动
+            const dx = moveX - startX;
+            const rotationY = y + (dx / (offsetWidth / 2) * (2 * PI))
+            camera.rotation.y = rotationY;
+          }
+          const onTouchEnd = () => {
+            domElement.removeEventListener('touchmove', onTouchMove);
+            domElement.removeEventListener('touchend', onTouchEnd);
+          }
+          domElement.addEventListener('touchmove', onTouchMove);
+          domElement.addEventListener('touchend', onTouchEnd);
+        } else if (startTouches.length === 2) {
+          const { x, y } = camera.position;
+          const startDistance = Math.sqrt(Math.pow((startTouches[0].clientX - startTouches[1].clientX), 2) + Math.pow((startTouches[0].clientY - startTouches[1].clientY), 2));
+          const onTouchMove = moveEvent => {
+            const { touches: moveTouches } = moveEvent;
+            if (moveTouches.length !== 2) return;
+            const moveDistance = Math.sqrt(Math.pow((moveTouches[0].clientX - moveTouches[1].clientX), 2) + Math.pow((moveTouches[0].clientY - moveTouches[1].clientY), 2));
+            const ratio = moveDistance / startDistance;
+            const { y: rotationY } = camera.rotation;
+            if (ratio < 1) {
+              const dx = Math.sin(rotationY) * 10;
+              const dy = -Math.cos(rotationY) * 10;
+              camera.position.x = x + (dx * (1 / ratio));
+              camera.position.y = y + (dy * (1 / ratio));
+            } else {
+              const dx = -Math.sin(rotationY) * 10;
+              const dy = Math.cos(rotationY) * 10;
+              camera.position.x = x + (dx * ratio);
+              camera.position.y = y + (dy * ratio);
+            }
+          };
+          const onTouchEnd = () => {
+            domElement.removeEventListener('touchmove', onTouchMove);
+            domElement.removeEventListener('touchend', onTouchEnd);
+          }
+          domElement.addEventListener('touchmove', onTouchMove);
+          domElement.addEventListener('touchend', onTouchEnd);
+        }
+      };
+      domElement.addEventListener('touchstart', onTouchStart);
+      callback = () => domElement.removeEventListener('touchstart', onTouchStart);
+    } else {
+      const onPointerDown = downEvent => {
+        const { offsetWidth, offsetHeight } = domElement;
+        const { x, y } = camera.rotation;
+        const { offsetX: downX, offsetY: downY } = downEvent;
+        const onPointerMove = moveEvent => {
+          const { offsetX: moveX, offsetY: moveY } = moveEvent;
+          const dy = moveY - downY;
+          const rotationX = x + (dy / (offsetHeight / 2) * PI);
+          camera.rotation.x = rotationX;
+          camera.rotation.x = x; // 不允许沿x轴转动
+          const dx = moveX - downX;
+          const rotationY = y + (dx / (offsetWidth / 2) * (2 * PI))
+          camera.rotation.y = rotationY;
+        }
+        const onPointerUp = () => {
+          domElement.removeEventListener('pointermove', onPointerMove);
+          domElement.removeEventListener('pointerup', onPointerUp);
+        }
+        domElement.addEventListener('pointermove', onPointerMove);
+        domElement.addEventListener('pointerup', onPointerUp);
+      };
+      const onWheel = e => {
+        const { deltaY } = e;
+        const { y: rotationY } = camera.rotation;
+        // deltaY > 0 缩小
+        if (deltaY > 0) {
+          const dx = Math.sin(rotationY);
+          const dy = -Math.cos(rotationY);
+          camera.position.x += dx;
+          camera.position.y += dy;
+        } else {
+          const dx = -Math.sin(rotationY);
+          const dy = Math.cos(rotationY);
+          camera.position.x += dx;
+          camera.position.y += dy;
+        }
+      };
+      domElement.addEventListener('pointerdown', onPointerDown);
+      domElement.addEventListener('wheel', onWheel);
+      callback = () => {
+        domElement.removeEventListener('pointerdown', onPointerDown);
+        domElement.removeEventListener('wheel', onWheel);
+      };
     }
-    domElement.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      domElement.removeEventListener('pointerdown', onPointerDown);
-    }
+    return callback;
   }, [camera, renderer])
+  /**
+   * 添加键盘控制
+   */
+  useEffect(() => {
+    if (!camera) return;
+    if (IS_MOBILE) return;
+    // 已按下的键
+    const keySet = new Set();
+    // 字母键对应的方向
+    const keyMap = {
+      'w': 'ArrowUp',
+      'a': 'ArrowLeft',
+      's': 'ArrowDown',
+      'd': 'ArrowRight',
+    };
+    const onArrowUp = () => {
+      if (keySet.has('ArrowUp')) {
+        const { y: rotationY } = camera.rotation;
+        const dx = -Math.sin(rotationY);
+        const dy = Math.cos(rotationY);
+        camera.position.x += dx;
+        camera.position.y += dy;
+        requestAnimationFrame(onArrowUp);
+      }
+    };
+    const onArrowRight = () => {
+      if (keySet.has('ArrowRight')) {
+        // const { y: rotationY } = camera.rotation;
+        // const dx = Math.cos(rotationY);
+        // const dy = Math.sin(rotationY);
+        // console.log(dx, dy)
+        // camera.position.x += dx;
+        // camera.position.y += dy;
+        camera.rotation.y -= (PI / 180);
+        requestAnimationFrame(onArrowRight);
+      }
+    };
+    const onArrowDown = () => {
+      if (keySet.has('ArrowDown')) {
+        const { y: rotationY } = camera.rotation;
+        const dx = Math.sin(rotationY);
+        const dy = -Math.cos(rotationY);
+        camera.position.x += dx;
+        camera.position.y += dy;
+        requestAnimationFrame(onArrowDown);
+      }
+    };
+    const onArrowLeft = () => {
+      if (keySet.has('ArrowLeft')) {
+        // const { y: rotationY } = camera.rotation;
+        // const dx = -Math.cos(rotationY);
+        // const dy = -Math.sin(rotationY);
+        // console.log(dx, dy)
+        // camera.position.x += dx;
+        // camera.position.y += dy;
+        camera.rotation.y += (PI / 180);
+        requestAnimationFrame(onArrowLeft);
+      }
+    };
+    const onKeyDown = e => {
+      let { key } = e;
+      key = keyMap[key] || key;
+      if (keySet.has(key)) return;
+      keySet.add(key);
+      switch (key) {
+        case 'ArrowUp':
+          keySet.delete('ArrowDown');
+          onArrowUp();
+          break;
+        case 'ArrowRight':
+          keySet.delete('ArrowLeft');
+          onArrowRight();
+          break;
+        case 'ArrowDown':
+          keySet.delete('ArrowUp');
+          onArrowDown();
+          break;
+        case 'ArrowLeft':
+          keySet.delete('ArrowRight');
+          onArrowLeft();
+          break;
+        default:
+          break;
+      }
+    };
+    const onKeyUp = e => {
+      let { key } = e;
+      key = keyMap[key] || key;
+      keySet.delete(key);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    return () => {
+      document.addEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
+    }
+  }, [camera, renderer]);
   /**
    * 添加光线追踪，处理点击事件
    */
@@ -216,7 +414,7 @@ const Exhibition = () => {
           const w = width / ratio;
           const h = height / ratio;
           const texture = new three.TextureLoader().load(path);
-          const geometry = new three.BoxGeometry(w, h, 0.4);
+          const geometry = new three.BoxGeometry(w, h, 0.2);
           const material = [
             new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
             new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
@@ -226,39 +424,23 @@ const Exhibition = () => {
             new three.MeshPhysicalMaterial({ map: texture }),
           ];
           const exhibit = new three.Mesh(geometry, material);
-          exhibit.position.z = 0.3;
+          exhibit.position.y = 0.2;
           exhibit.rotation.x = PI / 2;
           exhibit.onClick = () => {
             var box = new three.Box3();
             box.setFromObject(exhibit);
             const { min, max } = box;
             const boxCenter = {
-              x: min.x + (max.x - min.x),
-              y: min.y + (max.y - min.y),
-              z: min.z + (max.z - min.z),
+              x: min.x + ((max.x - min.x) / 2),
+              y: min.y + ((max.y - min.y) / 2),
+              z: min.z + ((max.z - min.z) / 2),
             };
-            new TWEEN.Tween(camera.position)
-              .to({ x: boxCenter.x + transform.position.x, y: boxCenter.y + transform.position.y }, 500)
-              .interpolation(TWEEN.Interpolation.Bezier)
-              .easing(TWEEN.Easing.Linear.None)
-              .start();
-            const getRotation = (source, target) => {
-              let maked = source % (PI * 2);
-              maked = maked > 0 ? maked : maked + (PI * 2);
-              const diff = target - maked;
-              // 差值大于180度，需要反方向旋转
-              if (Math.abs(diff) > PI) {
-                if (diff > 0) {
-                  return source + (PI * 2 - diff);
-                } else {
-                  return source + (PI * 2 + diff);
-                }
-              } else {
-                return source + diff;
-              }
-            }
-            new TWEEN.Tween(camera.rotation)
-              .to({ y: getRotation(camera.rotation.y, transform.rotation.y) }, 500)
+            const newPosition = { x: boxCenter.x + transform.position.x, y: boxCenter.y + transform.position.y };
+            const newRotation = { y: getRotation(camera.rotation.y, transform.rotation.y) };
+            const distance = Math.sqrt(Math.pow(camera.position.x - newPosition.x, 2) + Math.pow(camera.position.y - newPosition.y, 2));
+            const duration = distance * 10;
+            new TWEEN.Tween(camera)
+              .to({ position: newPosition, rotation: newRotation }, duration)
               .interpolation(TWEEN.Interpolation.Bezier)
               .easing(TWEEN.Easing.Linear.None)
               .start();
@@ -372,6 +554,7 @@ const Exhibition = () => {
       style={{
         width: '100vw',
         height: '100vh',
+        touchAction: 'none',
       }}
     />
   )
