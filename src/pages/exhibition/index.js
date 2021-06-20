@@ -1,9 +1,12 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import * as three from 'three';
 import TWEEN from '@tweenjs/tween.js';
-import { getRotation } from '../../utils';
+// import { Modal } from 'antd';
+import { makeRadian, getRotation } from '../../utils';
 
 const { PI } = Math;
+const HALF_PI = PI / 2;
+const DOUBLE_PI = PI * 2;
 // 是否为移动端
 const IS_MOBILE = window.navigator.userAgent.toLowerCase().indexOf('mobile') > -1;
 
@@ -14,7 +17,7 @@ const init = container => {
   const scene = new three.Scene();
   const camera = new three.PerspectiveCamera(75, offsetWidth / offsetHeight, 0.1, 1000);
   camera.position.set(0, 0, 12);
-  camera.rotation.set(PI / 2, 0, 0)
+  camera.rotation.set(HALF_PI, 0, 0)
   const renderer = new three.WebGLRenderer({ antialias: true });
   renderer.setSize(offsetWidth, offsetHeight);
   renderer.setClearColor(0x222842, 1);
@@ -274,186 +277,10 @@ const addRaycaster = ({ scene, camera, renderer }) => {
 const drawReferences = ({ scene }) => {
   const gridWidth = 100;
   const grid = new three.GridHelper(gridWidth, 10);
-  grid.rotation.x = PI / 2;
+  grid.rotation.x = HALF_PI;
   scene.add(grid);
   const axes = new three.AxesHelper(gridWidth / 2);
   scene.add(axes);
-};
-// 绘制一楼
-const drawFirstFloor = ({ scene, camera }) => {
-  const addPointLight = () => {
-    const pointLight = new three.PointLight(0xFFFFFF, 1, 80);
-    pointLight.position.set(0, 0, 19);
-    scene.add(pointLight);
-  };
-  const drawFloor = () => {
-    const geometry = new three.BoxGeometry(100, 100, 1);
-    const material = new three.MeshPhysicalMaterial({ color: 0x333333 });
-    const floor = new three.Mesh(geometry, material);
-    floor.position.z = -0.5;
-    floor.onClick = intersect => {
-      // 控制范围，不能离墙过近
-      let { x, y } = intersect.point;
-      if (Math.abs(x) > 30) x = x > 0 ? 30 : - 30;
-      if (Math.abs(y) > 30) y = y > 0 ? 30 : -30;
-      const distance = Math.sqrt(Math.pow(camera.position.x - x, 2) + Math.pow(camera.position.y - y, 2));
-      const duration = distance * 10;
-      new TWEEN.Tween(camera.position)
-        .to({ x, y }, duration)
-        .interpolation(TWEEN.Interpolation.Bezier)
-        .easing(TWEEN.Easing.Linear.None)
-        .start();
-    };
-    scene.add(floor);
-  };
-  const drawCeiling = () => {
-    const geometry = new three.BoxGeometry(100, 100, 1);
-    const material = new three.MeshPhysicalMaterial({ color: 0xFFFFFF });
-    const ceiling = new three.Mesh(geometry, material);
-    ceiling.position.z = 20 + 0.5;
-    scene.add(ceiling);
-  };
-  const drawWalls = () => {
-    /**
-     * 创建展品
-     * @param {*} path 展品图片路径
-     * @param {*} transform 点击展品时设置机位
-     * @returns 
-     */
-    const createExhibit = (path, transform) => {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.src = path;
-        image.onload = () => {
-          const { width, height } = image;
-          const ratioX = width / 16;
-          const ratioY = height / 9;
-          const ratio = Math.max(ratioX, ratioY);
-          const w = width / ratio;
-          const h = height / ratio;
-          const texture = new three.TextureLoader().load(path);
-          const geometry = new three.BoxGeometry(w, h, 0.2);
-          const material = [
-            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
-            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
-            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
-            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
-            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
-            new three.MeshPhysicalMaterial({ map: texture }),
-          ];
-          const exhibit = new three.Mesh(geometry, material);
-          exhibit.position.y = 0.2;
-          exhibit.rotation.x = PI / 2;
-          exhibit.onClick = () => {
-            var box = new three.Box3();
-            box.setFromObject(exhibit);
-            const { min, max } = box;
-            const boxCenter = {
-              x: min.x + ((max.x - min.x) / 2),
-              y: min.y + ((max.y - min.y) / 2),
-              z: min.z + ((max.z - min.z) / 2),
-            };
-            const newPosition = { x: boxCenter.x + transform.position.x, y: boxCenter.y + transform.position.y };
-            const newRotation = { y: getRotation(camera.rotation.y, transform.rotation.y) };
-            const distance = Math.sqrt(Math.pow(camera.position.x - newPosition.x, 2) + Math.pow(camera.position.y - newPosition.y, 2));
-            const duration = distance * 10;
-            new TWEEN.Tween(camera)
-              .to({ position: newPosition, rotation: newRotation }, duration)
-              .interpolation(TWEEN.Interpolation.Bezier)
-              .easing(TWEEN.Easing.Linear.None)
-              .start();
-          }
-          const group = new three.Group();
-          group.add(exhibit);
-          resolve(group);
-        };
-        image.onerror = () => reject();
-      })
-    };
-    /**
-     * 创建墙壁
-     * @param {*} paths 展品图片路径列表
-     * @param {*} transform 点击展品时设置机位
-     * @returns 
-     */
-    const createWall = (paths, transform) => {
-      const geometry = new three.BoxGeometry(100, 20, 1);
-      const material = new three.MeshPhysicalMaterial({ color: 0xDDDDDD });
-      const wall = new three.Mesh(geometry, material);
-      wall.position.z = 10;
-      wall.rotation.x = PI / 2;
-      // create group
-      const group = new three.Group();
-      group.add(wall);
-      // add exhibits
-      const spacing = 100 / 5;
-      const startX = spacing / 2;
-      paths.forEach((path, index) => {
-        createExhibit(path, transform).then(exhibit => {
-          const x = -50 + startX + (spacing * index);
-          exhibit.position.set(x, 0.5, 12);
-          group.add(exhibit);
-        });
-      })
-      return group;
-    };
-    // 正面墙
-    const wallFront = createWall([
-      './exhibits/1-1.jpg',
-      './exhibits/1-2.jpg',
-      './exhibits/1-3.jpg',
-      './exhibits/1-4.jpg',
-      './exhibits/1-5.jpg',
-    ], {
-      position: { x: 0, y: -20 },
-      rotation: { y: 0 },
-    });
-    wallFront.position.set(0, 50, 0);
-    wallFront.rotation.set(0, 0, PI);
-    // 背面墙
-    const wallBack = createWall([
-      './exhibits/2-1.jpg',
-      './exhibits/2-2.jpg',
-      './exhibits/2-3.jpg',
-      './exhibits/2-4.jpg',
-      './exhibits/2-5.jpg',
-    ], {
-      position: { x: 0, y: 20 },
-      rotation: { y: PI },
-    });
-    wallBack.position.set(0, -50, 0);
-    // 左面墙
-    const wallLeft = createWall([
-      './exhibits/3-1.jpg',
-      './exhibits/3-2.jpg',
-      './exhibits/3-3.jpg',
-      './exhibits/3-4.jpg',
-      './exhibits/3-5.jpg',
-    ], {
-      position: { x: 20, y: 0 },
-      rotation: { y: PI / 2 },
-    });
-    wallLeft.position.set(-50, 0, 0);
-    wallLeft.rotation.set(0, 0, PI / 2 * 3);
-    // 右面墙
-    const wallRight = createWall([
-      './exhibits/4-1.jpg',
-      './exhibits/4-2.jpg',
-      './exhibits/4-3.jpg',
-      './exhibits/4-4.jpg',
-      './exhibits/4-5.jpg',
-    ], {
-      position: { x: -20, y: 0 },
-      rotation: { y: PI / 2 * 3 },
-    });
-    wallRight.position.set(50, 0, 0);
-    wallRight.rotation.set(0, 0, PI / 2);
-    scene.add(wallFront, wallBack, wallLeft, wallRight);
-  };
-  addPointLight();
-  drawFloor();
-  drawCeiling();
-  drawWalls();
 };
 
 
@@ -461,6 +288,7 @@ const Exhibition = () => {
   const containerRef = useRef();
   const [inited, setInited] = useState(false);
   const [{ scene, camera, renderer }, setInstances] = useReducer((state, newState) => ({ ...state, ...newState }), {});
+  const [currentExhibit, setCurrentExhibit] = useState('');
   /**
    * 初始化
    */
@@ -474,7 +302,6 @@ const Exhibition = () => {
     addControls(instances);
     addRaycaster(instances);
     // drawReferences(instances);
-    drawFirstFloor(instances);
   }, [inited]);
   /**
    * 监听窗口缩放
@@ -495,6 +322,188 @@ const Exhibition = () => {
     };
   }, [camera, renderer]);
   /**
+   * 绘制一楼
+   */
+  useEffect(() => {
+    if (!scene || !camera || !renderer) return;
+    const addPointLight = () => {
+      const pointLight = new three.PointLight(0xFFFFFF, 1, 80);
+      pointLight.position.set(0, 0, 19);
+      scene.add(pointLight);
+      return pointLight;
+    };
+    const drawFloor = () => {
+      const geometry = new three.BoxGeometry(100, 100, 1);
+      const material = new three.MeshPhysicalMaterial({ color: 0x333333 });
+      const floor = new three.Mesh(geometry, material);
+      floor.position.z = -0.5;
+      floor.onClick = intersect => {
+        // 控制范围，不能离墙过近
+        let { x, y } = intersect.point;
+        if (Math.abs(x) > 30) x = x > 0 ? 30 : - 30;
+        if (Math.abs(y) > 30) y = y > 0 ? 30 : -30;
+        const distance = Math.sqrt(Math.pow(camera.position.x - x, 2) + Math.pow(camera.position.y - y, 2));
+        const duration = distance * 10;
+        new TWEEN.Tween(camera.position)
+          .to({ x, y }, duration)
+          .interpolation(TWEEN.Interpolation.Bezier)
+          .easing(TWEEN.Easing.Linear.None)
+          .start();
+      };
+      scene.add(floor);
+      return floor;
+    };
+    const drawCeiling = () => {
+      const geometry = new three.BoxGeometry(100, 100, 1);
+      const material = new three.MeshPhysicalMaterial({ color: 0xFFFFFF });
+      const ceiling = new three.Mesh(geometry, material);
+      ceiling.position.z = 20 + 0.5;
+      scene.add(ceiling);
+      return ceiling;
+    };
+    const drawExhibit = ({ url, rotation }) => {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.src = url;
+        image.onload = () => {
+          const { width, height } = image;
+          const ratioX = width / 16;
+          const ratioY = height / 9;
+          const ratio = Math.max(ratioX, ratioY);
+          const w = width / ratio;
+          const h = height / ratio;
+          const texture = new three.TextureLoader().load(url);
+          const geometry = new three.BoxGeometry(w, h, 0.2);
+          const material = [
+            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+            new three.MeshPhysicalMaterial({ map: texture }),
+            new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+          ];
+          const exhibit = new three.Mesh(geometry, material);
+          exhibit.position.y = -0.2;
+          exhibit.rotation.x = HALF_PI;
+          exhibit.onClick = intersect => {
+            var box = new three.Box3();
+            box.setFromObject(intersect.object);
+            const { min, max } = box;
+            const center = {
+              x: min.x + ((max.x - min.x) / 2),
+              y: min.y + ((max.y - min.y) / 2),
+              z: min.z + ((max.z - min.z) / 2),
+            };
+            // 根据墙面朝向计算新的相机位置
+            const rotationZ = makeRadian(rotation.z);
+            const newRotation = { y: getRotation(camera.rotation.y, rotationZ) };
+            // 距离小于25米且夹角小于30度，弹出大图
+            if (
+              Math.sqrt(Math.pow(camera.position.x - center.x, 2) + Math.pow(camera.position.y - center.y, 2)) <= 25 &&
+              Math.abs(makeRadian(camera.rotation.y) - rotationZ) < (PI / 6)
+            ) {
+              setCurrentExhibit(url);
+            } else {
+              const newPosition = { x: center.x - (Math.sin(DOUBLE_PI - rotationZ) * 20), y: center.y - (Math.cos(DOUBLE_PI - rotationZ) * 20) };
+              const duration = Math.sqrt(Math.pow(camera.position.x - newPosition.x, 2) + Math.pow(camera.position.y - newPosition.y, 2)) * 10;
+              new TWEEN.Tween(camera)
+                .to({ position: newPosition, rotation: newRotation }, duration)
+                .interpolation(TWEEN.Interpolation.Bezier)
+                .easing(TWEEN.Easing.Linear.None)
+                .start();
+            }
+          }
+          const group = new three.Group();
+          group.add(exhibit);
+          resolve(group);
+        };
+        image.onerror = () => reject();
+      })
+    };
+    const drawWall = ({ size, position, rotation, exhibits }) => {
+      const { width, height, deepth } = size;
+      const geometry = new three.BoxGeometry(width, height, deepth);
+      const material = new three.MeshPhysicalMaterial({ color: 0xDDDDDD });
+      const wall = new three.Mesh(geometry, material);
+      wall.position.y = deepth / 2;
+      wall.position.z = height / 2;
+      wall.rotation.x = HALF_PI;
+      // create group
+      const group = new three.Group();
+      group.add(wall);
+      Object.assign(group.position, position);
+      Object.assign(group.rotation, rotation);
+      // add exhibits
+      const spacing = 100 / exhibits.length;
+      const startX = spacing / 2;
+      exhibits.forEach((url, index) => {
+        drawExhibit({ url, rotation }).then(res => {
+          res.position.set(-(width / 2) + startX + (spacing * index), 0, 12);
+          group.add(res);
+        });
+      })
+      return group;
+    };
+    const drawWalls = () => {
+      const walls = [
+        {
+          size: { width: 100, height: 20, deepth: 1 },
+          position: { x: 0, y: 50, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+          exhibits: [
+            './exhibits/1-1.jpg',
+            './exhibits/1-2.jpg',
+            './exhibits/1-3.jpg',
+            './exhibits/1-4.jpg',
+            './exhibits/1-5.jpg',
+          ],
+        }, {
+          size: { width: 100, height: 20, deepth: 1 },
+          position: { x: 0, y: -50, z: 0 },
+          rotation: { x: 0, y: 0, z: PI },
+          exhibits: [
+            './exhibits/2-1.jpg',
+            './exhibits/2-2.jpg',
+            './exhibits/2-3.jpg',
+            './exhibits/2-4.jpg',
+            './exhibits/2-5.jpg',
+          ],
+        }, {
+          size: { width: 100, height: 20, deepth: 1 },
+          position: { x: -50, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: HALF_PI },
+          exhibits: [
+            './exhibits/3-1.jpg',
+            './exhibits/3-2.jpg',
+            './exhibits/3-3.jpg',
+            './exhibits/3-4.jpg',
+            './exhibits/3-5.jpg',
+          ],
+        }, {
+          size: { width: 100, height: 20, deepth: 1 },
+          position: { x: 50, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: -HALF_PI },
+          exhibits: [
+            './exhibits/4-1.jpg',
+            './exhibits/4-2.jpg',
+            './exhibits/4-3.jpg',
+            './exhibits/4-4.jpg',
+            './exhibits/4-5.jpg',
+          ],
+        }
+      ].map(drawWall);
+      scene.add(...walls);
+      return walls;
+    };
+    const pointLight = addPointLight();
+    const floor = drawFloor();
+    const ceiling = drawCeiling();
+    const walls = drawWalls();
+    return () => {
+      scene.remove(pointLight, floor, ceiling, ...walls);
+    }
+  }, [scene, camera, renderer]);
+  /**
    * 渲染场景
    */
   useEffect(() => {
@@ -510,14 +519,41 @@ const Exhibition = () => {
     return () => interrupt = true;
   }, [scene, camera, renderer]);
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: '100vw',
-        height: '100vh',
-        touchAction: 'none',
-      }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        style={{
+          width: '100vw',
+          height: '100vh',
+          touchAction: 'none',
+        }}
+      />
+      {currentExhibit ? (
+        <div
+          style={{
+            display: currentExhibit ? '' : 'none',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            textAlign: 'center',
+            background: '#000',
+            userSelect: 'none',
+          }}
+          onClick={() => setCurrentExhibit('')}
+        >
+          <img
+            alt=""
+            src={currentExhibit}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+            }}
+          />
+        </div>
+      ) : null}
+    </>
   )
 }
 
