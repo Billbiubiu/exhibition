@@ -1,7 +1,7 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import * as three from 'three';
+import * as turf from '@turf/turf';
 import TWEEN from '@tweenjs/tween.js';
-// import { Modal } from 'antd';
 import { makeRadian, getRotation } from '../../utils';
 import { Spin, Button } from 'antd';
 
@@ -18,7 +18,7 @@ const init = container => {
   const scene = new three.Scene();
   const camera = new three.PerspectiveCamera(75, offsetWidth / offsetHeight, 0.1, 1000);
   camera.position.set(0, 0, 12);
-  camera.rotation.set(HALF_PI, 0, 0)
+  camera.rotation.set(HALF_PI, 0, 0);
   const renderer = new three.WebGLRenderer({ antialias: true });
   renderer.setSize(offsetWidth, offsetHeight);
   renderer.setClearColor(0x222842, 1);
@@ -35,8 +35,26 @@ const addLights = ({ scene }) => {
   scene.add(ambientLight);
 };
 // 添加鼠标控制、手势控制、键盘控制
-const addControls = ({ camera, renderer }) => {
+const addControls = ({ camera, renderer }, boundariesRef) => {
   const { domElement } = renderer;
+  // 判断移动后是否在范围内
+  const isPointInBoundaries = point => {
+    const boundaries = boundariesRef.current;
+    if (!boundaries.length) return false;
+    return !!boundaries.find(boundary => {
+      return turf.booleanPointInPolygon(turf.point(point), boundary);
+    });
+  };
+  // 移动相机
+  const moveCamera = (dx, dy, callback) => {
+    const x = camera.position.x + dx;
+    const y = camera.position.y + dy;
+    if (!isPointInBoundaries([x, y])) return;
+    camera.position.x = x;
+    camera.position.y = y;
+    callback && requestAnimationFrame(callback);
+  };
+  // 监听触摸
   const addTouchControls = () => {
     const onTouchStart = startEvent => {
       const { touches: startTouches } = startEvent;
@@ -93,6 +111,7 @@ const addControls = ({ camera, renderer }) => {
     };
     domElement.addEventListener('touchstart', onTouchStart);
   };
+  // 监听鼠标
   const addMouseControls = () => {
 
     const onPointerDown = downEvent => {
@@ -123,18 +142,17 @@ const addControls = ({ camera, renderer }) => {
       if (deltaY > 0) {
         const dx = Math.sin(rotationY);
         const dy = -Math.cos(rotationY);
-        camera.position.x += dx;
-        camera.position.y += dy;
+        moveCamera(dx, dy);
       } else {
         const dx = -Math.sin(rotationY);
         const dy = Math.cos(rotationY);
-        camera.position.x += dx;
-        camera.position.y += dy;
+        moveCamera(dx, dy);
       }
     };
     domElement.addEventListener('pointerdown', onPointerDown);
     domElement.addEventListener('wheel', onWheel);
   };
+  // 监听键盘
   const addKeyboardControls = () => {
     // 字母键对应的方向
     const keyMap = {
@@ -148,24 +166,20 @@ const addControls = ({ camera, renderer }) => {
         const { y: rotationY } = camera.rotation;
         const dx = -Math.sin(rotationY);
         const dy = Math.cos(rotationY);
-        camera.position.x += dx;
-        camera.position.y += dy;
-        requestAnimationFrame(onArrowUp);
+        moveCamera(dx, dy, onArrowUp);
       }
     };
     const onArrowRight = () => {
       if (keySet.has('ArrowRight')) {
         if (keySet.has('Control')) {
           camera.rotation.y -= (PI / 180);
+          requestAnimationFrame(onArrowRight);
         } else {
           const { y: rotationY } = camera.rotation;
           const dx = Math.cos(rotationY);
           const dy = Math.sin(rotationY);
-          console.log(dx, dy)
-          camera.position.x += dx;
-          camera.position.y += dy;
+          moveCamera(dx, dy, onArrowRight);
         }
-        requestAnimationFrame(onArrowRight);
       }
     };
     const onArrowDown = () => {
@@ -173,24 +187,20 @@ const addControls = ({ camera, renderer }) => {
         const { y: rotationY } = camera.rotation;
         const dx = Math.sin(rotationY);
         const dy = -Math.cos(rotationY);
-        camera.position.x += dx;
-        camera.position.y += dy;
-        requestAnimationFrame(onArrowDown);
+        moveCamera(dx, dy, onArrowDown);
       }
     };
     const onArrowLeft = () => {
       if (keySet.has('ArrowLeft')) {
         if (keySet.has('Control')) {
           camera.rotation.y += (PI / 180);
+          requestAnimationFrame(onArrowLeft);
         } else {
           const { y: rotationY } = camera.rotation;
           const dx = -Math.cos(rotationY);
           const dy = -Math.sin(rotationY);
-          console.log(dx, dy)
-          camera.position.x += dx;
-          camera.position.y += dy;
+          moveCamera(dx, dy, onArrowLeft);
         }
-        requestAnimationFrame(onArrowLeft);
       }
     };
     const onKeyDown = e => {
@@ -236,7 +246,6 @@ const addControls = ({ camera, renderer }) => {
     addMouseControls();
     addKeyboardControls();
   }
-
 };
 // 添加光线追踪，处理点击事件
 const addRaycaster = ({ scene, camera, renderer }) => {
@@ -275,6 +284,7 @@ const addRaycaster = ({ scene, camera, renderer }) => {
   domElement.addEventListener('pointerdown', onPointerDown);
 };
 // 添加 grid 参考和 axis 参考
+// eslint-disable-next-line
 const drawReferences = ({ scene }) => {
   const gridWidth = 100;
   const grid = new three.GridHelper(gridWidth, 10);
@@ -283,23 +293,31 @@ const drawReferences = ({ scene }) => {
   const axes = new three.AxesHelper(gridWidth / 2);
   scene.add(axes);
 };
-// 绘制楼层
+// 绘制一楼
 const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
-  const getPointLight = () => {
-    const pointLight = new three.PointLight(0xFFFFFF, 1, 80);
-    pointLight.position.set(0, 0, 19);
-    return pointLight;
+  const drawLights = () => {
+    const lights = [
+      new three.PointLight(0xFFFFFF, 1, 80)
+    ];
+    lights[0].position.set(0, 0, 19);
+    return lights;
   };
   const drawFloor = () => {
     const geometry = new three.BoxGeometry(100, 100, 1);
     const material = new three.MeshPhysicalMaterial({ color: 0x333333 });
     const floor = new three.Mesh(geometry, material);
     floor.position.z = -0.5;
+    const boundary = turf.polygon([[
+      [-49, -49],
+      [49, -49],
+      [49, 49],
+      [-49, 49],
+      [-49, -49],
+    ]]);
     floor.onClick = intersect => {
       // 控制范围，不能离墙过近
       let { x, y } = intersect.point;
-      if (Math.abs(x) > 30) x = x > 0 ? 30 : - 30;
-      if (Math.abs(y) > 30) y = y > 0 ? 30 : -30;
+      if (!turf.booleanPointInPolygon(turf.point([x, y]), boundary))  return;
       const distance = Math.sqrt(Math.pow(camera.position.x - x, 2) + Math.pow(camera.position.y - y, 2));
       const duration = distance * 10;
       new TWEEN.Tween(camera.position)
@@ -317,6 +335,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
     ceiling.position.z = 20 + 0.5;
     return ceiling;
   };
+  // 绘制画框
   const drawFrame = ({ size }) => {
     const { width, height } = size;
     const shape = new three.Shape();
@@ -339,7 +358,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
     frame.position.z = -(height / 2);
     frame.rotation.x = HALF_PI;
     return frame;
-  }
+  };
   const drawExhibit = ({ url, rotation }) => {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -392,7 +411,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
               .start();
           }
         }
-        const frame = drawFrame({ size: {width: w, height: h} });
+        const frame = drawFrame({ size: { width: w, height: h } });
         const group = new three.Group();
         group.add(exhibit, frame);
         resolve(group);
@@ -401,28 +420,27 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
     })
   };
   const drawWall = ({ size, position, rotation, exhibits }) => {
-    const { width, height, deepth } = size;
-    const geometry = new three.BoxGeometry(width, height, deepth);
+    const { width, height, depth } = size;
+    const geometry = new three.BoxGeometry(width, height, depth);
     const material = new three.MeshPhysicalMaterial({ color: 0xDDDDDD });
     const wall = new three.Mesh(geometry, material);
-    wall.position.y = deepth / 2;
+    wall.position.y = depth / 2;
     wall.position.z = height / 2;
     wall.rotation.x = -HALF_PI;
     // 墙脚
     const footer = new three.Mesh(
-      new three.BoxGeometry(width, 1, 0.2),
+      new three.BoxGeometry(width + 0.2, depth + 0.2, 1),
       new three.MeshPhysicalMaterial({ color: 0x666666 }),
     );
-    footer.position.y = -0.1;
+    footer.position.y = depth / 2;
     footer.position.z = 0.5;
-    footer.rotation.x = -HALF_PI;
     // create group
     const group = new three.Group();
     group.add(wall, footer);
     Object.assign(group.position, position);
     Object.assign(group.rotation, rotation);
     // add exhibits
-    const spacing = 100 / exhibits.length;
+    const spacing = width / exhibits.length;
     const startX = spacing / 2;
     Promise.all(exhibits.map((url, index) => {
       return drawExhibit({ url, rotation }).then(res => {
@@ -437,7 +455,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
   const drawWalls = () => {
     const walls = [
       {
-        size: { width: 100, height: 20, deepth: 1 },
+        size: { width: 100, height: 20, depth: 1 },
         position: { x: 0, y: 50, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         exhibits: [
@@ -448,7 +466,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
           './exhibits/1-5.jpg',
         ],
       }, {
-        size: { width: 100, height: 20, deepth: 1 },
+        size: { width: 100, height: 20, depth: 1 },
         position: { x: 0, y: -50, z: 0 },
         rotation: { x: 0, y: 0, z: PI },
         exhibits: [
@@ -459,7 +477,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
           './exhibits/2-5.jpg',
         ],
       }, {
-        size: { width: 100, height: 20, deepth: 1 },
+        size: { width: 100, height: 20, depth: 1 },
         position: { x: -50, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: HALF_PI },
         exhibits: [
@@ -470,7 +488,7 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
           './exhibits/3-5.jpg',
         ],
       }, {
-        size: { width: 100, height: 20, deepth: 1 },
+        size: { width: 100, height: 20, depth: 1 },
         position: { x: 50, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: -HALF_PI },
         exhibits: [
@@ -484,17 +502,343 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
     ].map(drawWall);
     return walls;
   };
-  const pointLight = getPointLight();
+  const lights = drawLights();
   const floor = drawFloor();
   const ceiling = drawCeiling();
   const walls = drawWalls();
-  scene.add(pointLight, floor, ceiling, ...walls);
-  return () => {
-    scene.remove(pointLight, floor, ceiling, ...walls);
-  }
+  // 设置相机位置
+  camera.position.set(0, 0, 12);
+  camera.rotation.set(HALF_PI, 0, 0)
+  return {
+    geometries: [
+      ...lights,
+      floor,
+      ceiling,
+      ...walls,
+    ],
+    boundaries: [
+      turf.polygon([[
+        [-49, -49],
+        [49, -49],
+        [49, 49],
+        [-49, 49],
+        [-49, -49],
+      ]]),
+    ],
+  };
 };
+// 绘制二楼
 const drawSecondFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
-  setLoading(false);
+  const drawLights = () => {
+    const lights = [
+      new three.PointLight(0xFFFFFF, 1, 80),
+      new three.PointLight(0xFFFFFF, 1, 80),
+    ];
+    lights[0].position.set(0, -25, 19);
+    lights[1].position.set(0, 25, 19);
+    return lights;
+  };
+  const drawFloor = () => {
+    const geometry = new three.BoxGeometry(100, 100, 1);
+    const material = new three.MeshPhysicalMaterial({ color: 0x333333 });
+    const floor = new three.Mesh(geometry, material);
+    floor.position.z = -0.5;
+    const boundary = turf.polygon([[
+      [-49, -49],
+      [49, -49],
+      [49, 49],
+      [-49, 49],
+      [-49, -49],
+    ]]);
+    floor.onClick = intersect => {
+      // 控制范围，不能离墙过近
+      let { x, y } = intersect.point;
+      if (!turf.booleanPointInPolygon(turf.point([x, y]), boundary))  return;
+      const distance = Math.sqrt(Math.pow(camera.position.x - x, 2) + Math.pow(camera.position.y - y, 2));
+      const duration = distance * 10;
+      new TWEEN.Tween(camera.position)
+        .to({ x, y }, duration)
+        .interpolation(TWEEN.Interpolation.Bezier)
+        .easing(TWEEN.Easing.Linear.None)
+        .start();
+    };
+    return floor;
+  };
+  const drawCeiling = () => {
+    const geometry = new three.BoxGeometry(100, 100, 1);
+    const material = new three.MeshPhysicalMaterial({ color: 0xFFFFFF });
+    const ceiling = new three.Mesh(geometry, material);
+    ceiling.position.z = 20 + 0.5;
+    return ceiling;
+  };
+  // 绘制画框
+  const drawFrame = ({ size }) => {
+    const { width, height } = size;
+    const shape = new three.Shape();
+    const border = 0.4;
+    shape.moveTo(0 - border, 0 - border);
+    shape.lineTo(0 - border, height + border);
+    shape.lineTo(width + border, height + border);
+    shape.lineTo(width + border, 0 - border);
+    const path = new three.Path()
+    path.moveTo(0, 0);
+    path.lineTo(0, height);
+    path.lineTo(width, height);
+    path.lineTo(width, 0);
+    shape.holes.push(path);
+    const extrude = { depth: border, bevelEnabled: true, bevelSegments: 2, steps: 2, bevelSize: 0, bevelThickness: 0 };
+    const geometry = new three.ExtrudeGeometry(shape, extrude);
+    const material = new three.MeshPhysicalMaterial({ color: 0xEEEEEE });
+    const frame = new three.Mesh(geometry, material);
+    frame.position.x = -(width / 2);
+    frame.position.z = -(height / 2);
+    frame.rotation.x = HALF_PI;
+    return frame;
+  };
+  const drawExhibit = ({ url, rotation }) => {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.src = url;
+      image.onload = () => {
+        const { width, height } = image;
+        const ratioX = width / 16;
+        const ratioY = height / 9;
+        const ratio = Math.max(ratioX, ratioY);
+        const w = width / ratio;
+        const h = height / ratio;
+        const texture = new three.TextureLoader().load(url);
+        const geometry = new three.BoxGeometry(w, h, 0.2);
+        const material = [
+          new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+          new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+          new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+          new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+          new three.MeshPhysicalMaterial({ map: texture }),
+          new three.MeshPhysicalMaterial({ color: 0xFFFFFF }),
+        ];
+        const exhibit = new three.Mesh(geometry, material);
+        exhibit.position.y = -0.2;
+        exhibit.rotation.x = HALF_PI;
+        exhibit.onClick = intersect => {
+          var box = new three.Box3();
+          box.setFromObject(intersect.object);
+          const { min, max } = box;
+          const center = {
+            x: min.x + ((max.x - min.x) / 2),
+            y: min.y + ((max.y - min.y) / 2),
+            z: min.z + ((max.z - min.z) / 2),
+          };
+          // 根据墙面朝向计算新的相机位置
+          const rotationZ = makeRadian(rotation.z);
+          const newRotation = { y: getRotation(camera.rotation.y, rotationZ) };
+          // 距离小于25米且夹角小于30度，弹出大图
+          if (
+            Math.sqrt(Math.pow(camera.position.x - center.x, 2) + Math.pow(camera.position.y - center.y, 2)) <= 25 &&
+            Math.abs(makeRadian(camera.rotation.y) - rotationZ) < (PI / 6)
+          ) {
+            setCurrentExhibit(url);
+          } else {
+            const newPosition = { x: center.x - (Math.sin(DOUBLE_PI - rotationZ) * 20), y: center.y - (Math.cos(DOUBLE_PI - rotationZ) * 20) };
+            const duration = Math.sqrt(Math.pow(camera.position.x - newPosition.x, 2) + Math.pow(camera.position.y - newPosition.y, 2)) * 10;
+            new TWEEN.Tween(camera)
+              .to({ position: newPosition, rotation: newRotation }, duration)
+              .interpolation(TWEEN.Interpolation.Bezier)
+              .easing(TWEEN.Easing.Linear.None)
+              .start();
+          }
+        }
+        const frame = drawFrame({ size: { width: w, height: h } });
+        const group = new three.Group();
+        group.add(exhibit, frame);
+        resolve(group);
+      };
+      image.onerror = () => reject();
+    })
+  };
+  const drawWall = ({ size, position, rotation, exhibits }) => {
+    const { width, height, depth } = size;
+    const geometry = new three.BoxGeometry(width, height, depth);
+    const material = new three.MeshPhysicalMaterial({ color: 0xDDDDDD });
+    const wall = new three.Mesh(geometry, material);
+    wall.position.y = depth / 2;
+    wall.position.z = height / 2;
+    wall.rotation.x = -HALF_PI;
+    // 墙脚
+    const footer = new three.Mesh(
+      new three.BoxGeometry(width + 0.2, depth + 0.2, 1),
+      new three.MeshPhysicalMaterial({ color: 0x666666 }),
+    );
+    footer.position.y = depth / 2;
+    footer.position.z = 0.5;
+    // create group
+    const group = new three.Group();
+    group.add(wall, footer);
+    Object.assign(group.position, position);
+    Object.assign(group.rotation, rotation);
+    // add exhibits
+    const spacing = width / exhibits.length;
+    const startX = spacing / 2;
+    Promise.all(exhibits.map((url, index) => {
+      return drawExhibit({ url, rotation }).then(res => {
+        res.position.set(-(width / 2) + startX + (spacing * index), 0, 12);
+        group.add(res);
+      });
+    })).finally(() => {
+      setLoading(false);
+    });
+    return group;
+  };
+  const drawWalls = () => {
+    const walls = [
+      // 前
+      {
+        size: { width: 100, height: 20, depth: 1 },
+        position: { x: 0, y: 50, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        exhibits: [
+          './exhibits/1-1.jpg',
+          './exhibits/1-2.jpg',
+          // './exhibits/1-3.jpg',
+          './exhibits/1-4.jpg',
+          './exhibits/1-5.jpg',
+        ],
+      },
+      // 后
+      {
+        size: { width: 100, height: 20, depth: 1 },
+        position: { x: 0, y: -50, z: 0 },
+        rotation: { x: 0, y: 0, z: PI },
+        exhibits: [
+          './exhibits/2-1.jpg',
+          './exhibits/2-2.jpg',
+          // './exhibits/2-3.jpg',
+          './exhibits/2-4.jpg',
+          './exhibits/2-5.jpg',
+        ],
+      },
+      // 左-1
+      {
+        size: { width: 50, height: 20, depth: 1 },
+        position: { x: -50, y: 25, z: 0 },
+        rotation: { x: 0, y: 0, z: HALF_PI },
+        exhibits: [
+          './exhibits/3-1.jpg',
+          // './exhibits/3-2.jpg',
+          // './exhibits/3-3.jpg',
+          // './exhibits/3-4.jpg',
+          // './exhibits/3-5.jpg',
+        ],
+      },
+      // 左-2
+      {
+        size: { width: 50, height: 20, depth: 1 },
+        position: { x: -50, y: -25, z: 0 },
+        rotation: { x: 0, y: 0, z: HALF_PI },
+        exhibits: [
+          // './exhibits/3-1.jpg',
+          // './exhibits/3-2.jpg',
+          // './exhibits/3-3.jpg',
+          // './exhibits/3-4.jpg',
+          './exhibits/3-5.jpg',
+        ],
+      },
+      // 中-左
+      {
+        size: { width: 30, height: 20, depth: 1 },
+        position: { x: -35, y: -0.5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        exhibits: [
+          './exhibits/3-2.jpg',
+        ],
+      },
+      // 中-左
+      {
+        size: { width: 30, height: 20, depth: 1 },
+        position: { x: -35, y: 0.5, z: 0 },
+        rotation: { x: 0, y: 0, z: PI },
+        exhibits: [
+          './exhibits/3-4.jpg',
+        ],
+      },
+      // 右-1
+      {
+        size: { width: 50, height: 20, depth: 1 },
+        position: { x: 50, y: 25, z: 0 },
+        rotation: { x: 0, y: 0, z: -HALF_PI },
+        exhibits: [
+          './exhibits/4-1.jpg',
+          // './exhibits/4-2.jpg',
+          // './exhibits/4-3.jpg',
+          // './exhibits/4-4.jpg',
+          // './exhibits/4-5.jpg',
+        ],
+      },
+      // 右-2
+      {
+        size: { width: 50, height: 20, depth: 1 },
+        position: { x: 50, y: -25, z: 0 },
+        rotation: { x: 0, y: 0, z: -HALF_PI },
+        exhibits: [
+          // './exhibits/4-1.jpg',
+          // './exhibits/4-2.jpg',
+          // './exhibits/4-3.jpg',
+          // './exhibits/4-4.jpg',
+          './exhibits/4-5.jpg',
+        ],
+      },
+      // 中-右
+      {
+        size: { width: 30, height: 20, depth: 1 },
+        position: { x: 35, y: -0.5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        exhibits: [
+          './exhibits/4-2.jpg',
+        ],
+      },
+      // 中-右
+      {
+        size: { width: 30, height: 20, depth: 1 },
+        position: { x: 35, y: 0.5, z: 0 },
+        rotation: { x: 0, y: 0, z: PI },
+        exhibits: [
+          './exhibits/4-4.jpg',
+        ],
+      },
+    ].map(drawWall);
+    return walls;
+  };
+  const lights = drawLights();
+  const floor = drawFloor();
+  const ceiling = drawCeiling();
+  const walls = drawWalls();
+  // 设置相机位置
+  camera.position.set(0, 0, 12);
+  camera.rotation.set(HALF_PI, 0, 0)
+  return {
+    geometries: [
+      ...lights,
+      floor,
+      ceiling,
+      ...walls,
+    ],
+    boundaries: [
+      turf.polygon([[
+        [-49, -49],
+        [49, -49],
+        [49, -2],
+        [19, -2],
+        [19, 2],
+        [49, 2],
+        [49, 49],
+        [-49, 49],
+        [-49, 2],
+        [-19, 2],
+        [-19, -2],
+        [-49, -2],
+        [-49, -49],
+      ]]),
+    ],
+  };
 };
 const floorMap = {
   1: drawFirstFloor,
@@ -517,6 +861,8 @@ const Exhibition = () => {
   }), {});
   const [loading, setLoading] = useState(true);
   const [currentFloor, setCurrentFloor] = useState(1);
+  // 楼层边界
+  const boundariesRef = useRef([]);
   // 查看大图
   const [currentExhibit, setCurrentExhibit] = useState('');
   /**
@@ -529,7 +875,7 @@ const Exhibition = () => {
     setInited(true);
     setInstances(instances);
     addLights(instances);
-    addControls(instances);
+    addControls(instances, boundariesRef);
     addRaycaster(instances);
     // drawReferences(instances);
   }, [inited]);
@@ -552,21 +898,29 @@ const Exhibition = () => {
     };
   }, [camera, renderer]);
   /**
-   * 绘制一楼
+   * 绘制楼层
    */
   useEffect(() => {
     if (!scene || !camera || !renderer) return;
     const renderFloor = floorMap[currentFloor];
     if (!renderFloor) return;
     setLoading(true);
-    const removeFloor = renderFloor({
+    const {
+      geometries,
+      boundaries,
+    } = renderFloor({
       scene,
       camera,
       renderer,
       setLoading,
       setCurrentExhibit
     });
-    return () => removeFloor && removeFloor();
+    scene.add(...geometries);
+    boundariesRef.current = boundaries;
+    return () => {
+      scene.remove(...geometries);
+      boundariesRef.current = [];
+    };
   }, [scene, camera, renderer, currentFloor]);
   /**
    * 渲染场景

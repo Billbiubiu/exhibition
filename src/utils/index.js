@@ -1,7 +1,7 @@
 export const makeRadian = radian => {
   let makedRadian = radian % (Math.PI * 2);
   return makedRadian < 0 ? makedRadian + (Math.PI * 2) : makedRadian;
-}
+};
 /**
 * 转动工具，总是以锐角进行转动
 * @param {*} source 当前角度
