@@ -515,41 +515,6 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
   const floor = drawFloor();
   const ceiling = drawCeiling();
   const walls = drawWalls();
-  // 中
-  const wall = (() => {
-    const width = 40, height = 20, depth = 1;
-    const geometry = new three.BoxGeometry(width, height, depth);
-    const texture = new three.TextureLoader().load('./exhibits/1-1.jpg');
-    texture.rotation = PI;
-    texture.center = new three.Vector2(0.5, 0.5);
-    // size: 1440 * 1280
-    // 1440 / 40 = 36
-    // 36 * 20 = 720
-    // 720 / 1280 = 0.5625
-    // (1 - 0.5625) / 2 = 0.21875
-    texture.repeat.set(1, 0.5625);
-    texture.offset.set(0, 0.21875);
-    const material = [
-      new three.MeshPhysicalMaterial({ color: 0xDDDDDD }),
-      new three.MeshPhysicalMaterial({ color: 0xDDDDDD }),
-      new three.MeshPhysicalMaterial({ color: 0xDDDDDD }),
-      new three.MeshPhysicalMaterial({ color: 0xDDDDDD }),
-      new three.MeshPhysicalMaterial({ color: 0xDDDDDD }),
-      new three.MeshPhysicalMaterial({ map: texture }),
-    ];
-    const wall = new three.Mesh(geometry, material);
-    wall.position.z = height / 2;
-    wall.rotation.x = -HALF_PI;
-    // 墙脚
-    const footer = new three.Mesh(
-      new three.BoxGeometry(width + 0.2, depth + 0.2, 1),
-      new three.MeshPhysicalMaterial({ color: 0x666666 }),
-    );
-    footer.position.z = 0.5;
-    const group = new three.Group();
-    group.add(wall, footer);
-    return group;
-  })();
   // 设置相机位置
   camera.position.set(0, -30, 12);
   camera.rotation.set(HALF_PI, 0, 0)
@@ -559,7 +524,6 @@ const drawFirstFloor = ({ scene, camera, setLoading, setCurrentExhibit }) => {
       floor,
       ceiling,
       ...walls,
-      wall,
     ],
     boundaries: [
       turf.polygon([[
